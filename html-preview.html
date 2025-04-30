@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML实时预览工具</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs/loader.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --danger-color: #e74c3c;
+            --success-color: #2ecc71;
+            --dark-color: #2c3e50;
+            --light-color: #ecf0f1;
+            --border-radius: 8px;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: var(--light-color);
+            color: var(--dark-color);
+        }
+        .toolbar {
+            padding: 12px 20px;
+            background: white;
+            color: var(--dark-color);
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            box-shadow: var(--shadow);
+            position: relative;
+            z-index: 10;
+        }
+        .main-container {
+            display: flex;
+            flex: 1;
+            gap: 0;
+            padding: 20px;
+            height: calc(100vh - 64px);
+            position: relative;
+        }
+        .editors-container {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-width: 400px;
+            gap: 8px;
+        }
+        .editor-section {
+            flex: 1;
+            background: white;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            position: relative;
+        }
+        .editor-header {
+            padding: 8px 12px;
+            background: var(--dark-color);
+            color: white;
+            font-size: 12px;
+            font-weight: 500;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .editor-header .title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .editor-content {
+            height: calc(100% - 33px);
+        }
+        #editor-container {
+            flex: 1;
+            border-radius: var(--border-radius) 0 0 var(--border-radius);
+            background: white;
+            min-width: 200px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+        .preview-container {
+            flex: 1;
+            border-radius: 0 var(--border-radius) var(--border-radius) 0;
+            background: white;
+            position: relative;
+            overflow: hidden;
+            min-width: 400px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+        }
+        #preview-frame {
+            flex: 1;
+            border: none;
+            width: 100%;
+            height: 100%;
+            background: white;
+        }
+        .error-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(231, 76, 60, 0.1);
+            color: var(--danger-color);
+            padding: 12px;
+            border-radius: var(--border-radius);
+            margin: 10px;
+            display: none;
+            backdrop-filter: blur(4px);
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: var(--border-radius);
+            background: var(--primary-color);
+            color: white;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow);
+            filter: brightness(1.1);
+        }
+        button i {
+            font-size: 14px;
+        }
+        button.danger {
+            background: var(--danger-color);
+        }
+        button.danger:hover {
+            background: #c0392b;
+        }
+        .resizer {
+            width: 8px;
+            background: var(--light-color);
+            cursor: col-resize;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: background 0.3s;
+        }
+        .resizer:hover {
+            background: var(--primary-color);
+        }
+        .resizer::after {
+            content: "⋮";
+            color: var(--dark-color);
+            font-size: 20px;
+            line-height: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button onclick="formatAllCode()"><i class="fas fa-code"></i>格式化全部</button>
+        <button onclick="toggleFullscreen()"><i class="fas fa-expand"></i>全屏预览</button>
+        <button onclick="saveHTML()"><i class="fas fa-save"></i>保存HTML</button>
+        <button onclick="copyHTML()"><i class="fas fa-copy"></i>复制HTML</button>
+        <button onclick="clearEditor()" class="danger"><i class="fas fa-trash"></i>清空</button>
+    </div>
+    <div class="main-container">
+        <div class="editors-container">
+            <div class="editor-section">
+                <div class="editor-header">
+                    <div class="title">
+                        <i class="fas fa-code"></i>
+                        HTML
+                    </div>
+                </div>
+                <div class="editor-content" id="html-editor"></div>
+            </div>
+            <div class="editor-section">
+                <div class="editor-header">
+                    <div class="title">
+                        <i class="fas fa-paint-brush"></i>
+                        CSS
+                    </div>
+                </div>
+                <div class="editor-content" id="css-editor"></div>
+            </div>
+            <div class="editor-section">
+                <div class="editor-header">
+                    <div class="title">
+                        <i class="fas fa-js"></i>
+                        JavaScript
+                    </div>
+                </div>
+                <div class="editor-content" id="js-editor"></div>
+            </div>
+        </div>
+        <div class="resizer" id="dragMe"></div>
+        <div class="preview-container">
+            <iframe id="preview-frame"></iframe>
+            <div class="error-overlay" id="error-message"></div>
+        </div>
+    </div>
+
+    <script>
+        let htmlEditor, cssEditor, jsEditor;
+        let isResizing = false;
+        let currentX;
+        let initialEditorsWidth;
+
+        const defaultHTML = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>HTML预览</title>
+</head>
+<body>
+    <h1>欢迎使用HTML预览工具</h1>
+    <p>这是一个简单的示例，您可以在左侧分别编辑：</p>
+    <ul>
+        <li class="highlight">HTML结构</li>
+        <li class="highlight">CSS样式</li>
+        <li class="highlight">JavaScript脚本</li>
+    </ul>
+    <div id="demo">点击我试试JavaScript效果</div>
+</body>
+</html>`;
+
+        const defaultCSS = `body {
+    font-family: Arial, sans-serif;
+    margin: 40px;
+    line-height: 1.6;
+}
+
+h1 {
+    color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 10px;
+}
+
+p {
+    color: #34495e;
+}
+
+.highlight {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+#demo {
+    margin-top: 20px;
+    padding: 10px;
+    background: #3498db;
+    color: white;
+    cursor: pointer;
+    border-radius: 4px;
+    text-align: center;
+    transition: background 0.3s;
+}
+
+#demo:hover {
+    background: #2980b9;
+}`;
+
+        const defaultJS = `document.getElementById('demo').addEventListener('click', function() {
+    this.textContent = '你点击了这里！';
+    this.style.background = '#e74c3c';
+});`;
+
+        // 初始化Monaco Editor
+        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs' }});
+        require(['vs/editor/editor.main'], function() {
+            // 创建HTML编辑器
+            htmlEditor = monaco.editor.create(document.getElementById('html-editor'), {
+                value: defaultHTML,
+                language: 'html',
+                theme: 'vs-dark',
+                minimap: { enabled: false },
+                lineNumbers: 'on',
+                folding: true,
+                fontSize: 14,
+                fontFamily: "'Fira Code', 'Consolas', monospace",
+                scrollBeyondLastLine: false,
+            });
+
+            // 创建CSS编辑器
+            cssEditor = monaco.editor.create(document.getElementById('css-editor'), {
+                value: defaultCSS,
+                language: 'css',
+                theme: 'vs-dark',
+                minimap: { enabled: false },
+                lineNumbers: 'on',
+                folding: true,
+                fontSize: 14,
+                fontFamily: "'Fira Code', 'Consolas', monospace",
+                scrollBeyondLastLine: false,
+            });
+
+            // 创建JavaScript编辑器
+            jsEditor = monaco.editor.create(document.getElementById('js-editor'), {
+                value: defaultJS,
+                language: 'javascript',
+                theme: 'vs-dark',
+                minimap: { enabled: false },
+                lineNumbers: 'on',
+                folding: true,
+                fontSize: 14,
+                fontFamily: "'Fira Code', 'Consolas', monospace",
+                scrollBeyondLastLine: false,
+            });
+
+            // 监听编辑器内容变化
+            htmlEditor.onDidChangeModelContent(debounce(updatePreview, 300));
+            cssEditor.onDidChangeModelContent(debounce(updatePreview, 300));
+            jsEditor.onDidChangeModelContent(debounce(updatePreview, 300));
+            
+            updatePreview();
+        });
+
+        // 防抖函数
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        // 更新预览
+        function updatePreview() {
+            const htmlCode = htmlEditor.getValue();
+            const cssCode = cssEditor.getValue();
+            const jsCode = jsEditor.getValue();
+            
+            // 解析HTML文档
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlCode, 'text/html');
+            
+            // 注入CSS
+            const styleElement = doc.createElement('style');
+            styleElement.textContent = cssCode;
+            doc.head.appendChild(styleElement);
+            
+            // 注入JavaScript
+            const scriptElement = doc.createElement('script');
+            scriptElement.textContent = jsCode;
+            doc.body.appendChild(scriptElement);
+            
+            try {
+                const previewFrame = document.getElementById('preview-frame');
+                const previewDoc = previewFrame.contentDocument || previewFrame.contentWindow.document;
+                previewDoc.open();
+                previewDoc.write(doc.documentElement.outerHTML);
+                previewDoc.close();
+                document.getElementById('error-message').style.display = 'none';
+            } catch (error) {
+                document.getElementById('error-message').textContent = `错误: ${error.message}`;
+                document.getElementById('error-message').style.display = 'block';
+            }
+        }
+
+        // 格式化所有代码
+        function formatAllCode() {
+            try {
+                const formattedHTML = prettier.format(htmlEditor.getValue(), {
+                    parser: 'html',
+                    plugins: prettierPlugins
+                });
+                htmlEditor.setValue(formattedHTML);
+
+                const formattedCSS = prettier.format(cssEditor.getValue(), {
+                    parser: 'css',
+                    plugins: prettierPlugins
+                });
+                cssEditor.setValue(formattedCSS);
+
+                const formattedJS = prettier.format(jsEditor.getValue(), {
+                    parser: 'babel',
+                    plugins: prettierPlugins
+                });
+                jsEditor.setValue(formattedJS);
+            } catch (error) {
+                alert('格式化失败：' + error.message);
+            }
+        }
+
+        // 保存HTML文件
+        function saveHTML() {
+            try {
+                const htmlCode = htmlEditor.getValue();
+                const cssCode = cssEditor.getValue();
+                const jsCode = jsEditor.getValue();
+                
+                // 解析HTML文档
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlCode, 'text/html');
+                
+                // 添加CSS
+                const styleElement = doc.createElement('style');
+                styleElement.textContent = cssCode;
+                doc.head.appendChild(styleElement);
+                
+                // 添加JavaScript
+                const scriptElement = doc.createElement('script');
+                scriptElement.textContent = jsCode;
+                doc.body.appendChild(scriptElement);
+                
+                const blob = new Blob([doc.documentElement.outerHTML], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'index.html';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                alert('保存HTML失败：' + error.message);
+            }
+        }
+
+        // 复制HTML代码
+        async function copyHTML() {
+            try {
+                const htmlCode = htmlEditor.getValue();
+                const cssCode = cssEditor.getValue();
+                const jsCode = jsEditor.getValue();
+                
+                // 解析HTML文档
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlCode, 'text/html');
+                
+                // 添加CSS
+                const styleElement = doc.createElement('style');
+                styleElement.textContent = cssCode;
+                doc.head.appendChild(styleElement);
+                
+                // 添加JavaScript
+                const scriptElement = doc.createElement('script');
+                scriptElement.textContent = jsCode;
+                doc.body.appendChild(scriptElement);
+                
+                await navigator.clipboard.writeText(doc.documentElement.outerHTML);
+                const copyBtn = document.querySelector('[onclick="copyHTML()"]');
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="fas fa-check"></i>已复制！';
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                }, 2000);
+            } catch (err) {
+                alert('复制失败：' + err.message);
+            }
+        }
+
+        // 清空编辑器
+        function clearEditor() {
+            if (confirm('确定要清空所有编辑器内容吗？')) {
+                htmlEditor.setValue('');
+                cssEditor.setValue('');
+                jsEditor.setValue('');
+                updatePreview();
+            }
+        }
+
+        // 初始化拖动分隔条
+        const resizer = document.querySelector('.resizer');
+        const editorsContainer = document.querySelector('.editors-container');
+        
+        resizer.addEventListener('mousedown', initResize, false);
+
+        function initResize(e) {
+            isResizing = true;
+            currentX = e.clientX;
+            initialEditorsWidth = editorsContainer.getBoundingClientRect().width;
+            
+            document.addEventListener('mousemove', resize, false);
+            document.addEventListener('mouseup', stopResize, false);
+        }
+
+        function resize(e) {
+            if (!isResizing) return;
+            
+            const container = document.querySelector('.main-container');
+            const containerStyles = window.getComputedStyle(container);
+            const paddingLeft = parseFloat(containerStyles.paddingLeft);
+            const paddingRight = parseFloat(containerStyles.paddingRight);
+            
+            // 计算实际可用宽度（减去内边距）
+            const containerWidth = container.getBoundingClientRect().width - (paddingLeft + paddingRight);
+            
+            // 只保留左侧编辑器最小宽度限制
+            const minWidth = 300;
+            
+            const deltaX = e.clientX - currentX;
+            let newWidth = initialEditorsWidth + deltaX;
+            
+            // 只限制最小宽度，不限制最大宽度
+            newWidth = Math.max(minWidth, newWidth);
+            
+            // 确保不超过容器总宽度
+            if (newWidth < containerWidth) {
+                editorsContainer.style.width = `${newWidth}px`;
+                editorsContainer.style.flex = 'none';
+                
+                // 使用 requestAnimationFrame 优化性能
+                requestAnimationFrame(() => {
+                    htmlEditor.layout();
+                    cssEditor.layout();
+                    jsEditor.layout();
+                });
+            }
+        }
+
+        function stopResize() {
+            isResizing = false;
+            document.removeEventListener('mousemove', resize, false);
+            document.removeEventListener('mouseup', stopResize, false);
+            htmlEditor.layout();
+            cssEditor.layout();
+            jsEditor.layout();
+        }
+
+        // 添加全屏预览功能
+        function toggleFullscreen() {
+            const previewFrame = document.getElementById('preview-frame');
+            
+            if (!document.fullscreenElement) {
+                // 进入全屏
+                if (previewFrame.requestFullscreen) {
+                    previewFrame.requestFullscreen();
+                } else if (previewFrame.webkitRequestFullscreen) { // Safari
+                    previewFrame.webkitRequestFullscreen();
+                } else if (previewFrame.msRequestFullscreen) { // IE11
+                    previewFrame.msRequestFullscreen();
+                }
+            } else {
+                // 退出全屏
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) { // Safari
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) { // IE11
+                    document.msExitFullscreen();
+                }
+            }
+        }
+
+        // 监听全屏状态变化
+        document.addEventListener('fullscreenchange', updateFullscreenButton);
+        document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+        document.addEventListener('msfullscreenchange', updateFullscreenButton);
+
+        function updateFullscreenButton() {
+            const fullscreenBtn = document.querySelector('[onclick="toggleFullscreen()"]');
+            const icon = fullscreenBtn.querySelector('i');
+            
+            if (document.fullscreenElement || 
+                document.webkitFullscreenElement || 
+                document.msFullscreenElement) {
+                icon.className = 'fas fa-compress';
+                fullscreenBtn.title = '退出全屏';
+            } else {
+                icon.className = 'fas fa-expand';
+                fullscreenBtn.title = '全屏预览';
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/prettier@2.8.8/standalone.js"></script>
+    <script src="https://unpkg.com/prettier@2.8.8/parser-html.js"></script>
+    <script src="https://unpkg.com/prettier@2.8.8/parser-css.js"></script>
+    <script src="https://unpkg.com/prettier@2.8.8/parser-babel.js"></script>
+</body>
+</html> 

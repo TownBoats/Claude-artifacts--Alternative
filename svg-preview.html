@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG实时预览工具</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs/loader.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --danger-color: #e74c3c;
+            --success-color: #2ecc71;
+            --dark-color: #2c3e50;
+            --light-color: #ecf0f1;
+            --border-radius: 8px;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: var(--light-color);
+            color: var(--dark-color);
+        }
+        .toolbar {
+            padding: 12px 20px;
+            background: white;
+            color: var(--dark-color);
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            box-shadow: var(--shadow);
+            position: relative;
+            z-index: 10;
+        }
+        .main-container {
+            display: flex;
+            flex: 1;
+            gap: 0;
+            padding: 20px;
+            height: calc(100vh - 64px);
+            position: relative;
+        }
+        #editor-container {
+            flex: 1;
+            border-radius: var(--border-radius) 0 0 var(--border-radius);
+            background: white;
+            min-width: 200px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+        .preview-container {
+            flex: 1;
+            border-radius: 0 var(--border-radius) var(--border-radius) 0;
+            background: white;
+            position: relative;
+            overflow: hidden;
+            min-width: 200px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+        }
+        .preview-scroll-container {
+            flex: 1;
+            overflow: auto;
+            position: relative;
+            /* 自定义滚动条样式 */
+            scrollbar-width: thin;
+            scrollbar-color: var(--primary-color) transparent;
+        }
+        .preview-scroll-container::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .preview-scroll-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .preview-scroll-container::-webkit-scrollbar-thumb {
+            background-color: var(--primary-color);
+            border-radius: 4px;
+            border: 2px solid transparent;
+        }
+        .preview-scroll-container::-webkit-scrollbar-thumb:hover {
+            background-color: #2980b9;
+        }
+        #svg-preview {
+            min-width: 100%;
+            min-height: 100%;
+            transform-origin: 0 0;
+            background: #f8f9fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .error-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(231, 76, 60, 0.1);
+            color: var(--danger-color);
+            padding: 12px;
+            border-radius: var(--border-radius);
+            margin: 10px;
+            display: none;
+            backdrop-filter: blur(4px);
+        }
+        .performance-overlay {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: var(--border-radius);
+            display: none;
+            backdrop-filter: blur(4px);
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: var(--border-radius);
+            background: var(--primary-color);
+            color: white;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow);
+            filter: brightness(1.1);
+        }
+        button i {
+            font-size: 14px;
+        }
+        button.danger {
+            background: var(--danger-color);
+        }
+        button.danger:hover {
+            background: #c0392b;
+        }
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 8px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(4px);
+        }
+        .resizer {
+            width: 8px;
+            background: var(--light-color);
+            cursor: col-resize;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: background 0.3s;
+        }
+        .resizer:hover {
+            background: var(--primary-color);
+        }
+        .resizer::after {
+            content: "⋮";
+            color: var(--dark-color);
+            font-size: 20px;
+            line-height: 20px;
+        }
+        input[type="text"] {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius);
+            font-size: 14px;
+            outline: none;
+            transition: all 0.3s;
+            position: relative;
+        }
+        input[type="text"]:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: var(--border-radius);
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            white-space: nowrap;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+        .tooltip.show {
+            opacity: 1;
+        }
+        .controls-hint {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 12px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            font-size: 13px;
+            color: var(--dark-color);
+            backdrop-filter: blur(4px);
+            z-index: 100;
+            max-width: 300px;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+        .controls-hint:hover {
+            opacity: 1;
+        }
+        .controls-hint h3 {
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .controls-hint ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .controls-hint li {
+            margin: 4px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .controls-hint .key {
+            background: var(--dark-color);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: monospace;
+        }
+        .welcome-svg {
+            opacity: 0.7;
+            transition: opacity 0.3s;
+        }
+        .welcome-svg:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button onclick="formatCode()"><i class="fas fa-code"></i>格式化</button>
+        <button onclick="toggleFullscreen()"><i class="fas fa-expand"></i>全屏预览</button>
+        <button onclick="exportPNG()"><i class="fas fa-file-image"></i>导出PNG</button>
+        <button onclick="exportJPEG()"><i class="fas fa-file-image"></i>导出JPEG</button>
+        <button onclick="saveSVG()"><i class="fas fa-save"></i>保存SVG</button>
+        <button onclick="copySVG()"><i class="fas fa-copy"></i>复制SVG</button>
+        <button onclick="clearEditor()" class="danger"><i class="fas fa-trash"></i>清空</button>
+        <div style="position: relative;">
+            <input type="text" id="filename" placeholder="文件名" value="svg-export">
+            <div class="tooltip" id="filename-tooltip">导出文件将使用此名称</div>
+        </div>
+    </div>
+    <div class="main-container">
+        <div id="editor-container"></div>
+        <div class="resizer" id="dragMe"></div>
+        <div class="preview-container">
+            <div class="preview-scroll-container">
+                <div id="svg-preview"></div>
+            </div>
+            <div class="error-overlay" id="error-message"></div>
+            <div class="performance-overlay" id="performance-info"></div>
+            <div class="controls-hint">
+                <h3><i class="fas fa-keyboard"></i>操作提示</h3>
+                <ul>
+                    <li><span class="key">Ctrl</span> + 滚轮 = 缩放预览</li>
+                    <li><span class="key">Ctrl</span> + 拖动 = 平移预览</li>
+                    <li><i class="fas fa-arrows-alt"></i>直接滚动 = 查看超出部分</li>
+                </ul>
+            </div>
+            <div class="zoom-controls">
+                <button onclick="zoomIn()"><i class="fas fa-search-plus"></i>放大</button>
+                <button onclick="zoomOut()"><i class="fas fa-search-minus"></i>缩小</button>
+                <button onclick="resetZoom()"><i class="fas fa-compress-arrows-alt"></i>重置</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let editor;
+        let scale = 1;
+        let isDragging = false;
+        let startX, startY, translateX = 0, translateY = 0;
+        let isResizing = false;
+        let currentX;
+        let initialEditorWidth;
+
+        // 初始化Monaco Editor
+        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs' }});
+        require(['vs/editor/editor.main'], function() {
+            editor = monaco.editor.create(document.getElementById('editor-container'), {
+                value: `<!-- 这是一个SVG示例，您可以在这里编辑SVG代码 -->
+<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
+    <!-- 欢迎使用SVG预览工具 -->
+    <style>
+        .welcome-text { font: bold 24px sans-serif; }
+        .hint-text { font: 14px sans-serif; }
+    </style>
+    
+    <!-- 背景 -->
+    <rect width="100%" height="100%" fill="#f8f9fa"/>
+    
+    <!-- 示例图形 -->
+    <g transform="translate(200,150)" class="welcome-svg">
+        <!-- 彩色圆环 -->
+        <circle r="60" fill="none" stroke="#3498db" stroke-width="12"/>
+        <circle r="60" fill="none" stroke="#e74c3c" stroke-width="12" 
+                stroke-dasharray="60 315" transform="rotate(60)"/>
+        <circle r="60" fill="none" stroke="#2ecc71" stroke-width="12"
+                stroke-dasharray="60 315" transform="rotate(120)"/>
+        
+        <!-- 中心图标 -->
+        <path d="M-20,-20 L20,20 M-20,20 L20,-20" stroke="#2c3e50" 
+              stroke-width="8" stroke-linecap="round"/>
+    </g>
+    
+    <!-- 文字说明 -->
+    <text x="200" y="240" text-anchor="middle" class="welcome-text" fill="#2c3e50">
+        SVG预览工具
+    </text>
+    <text x="200" y="270" text-anchor="middle" class="hint-text" fill="#7f8c8d">
+        在左侧编辑器中修改代码，右侧实时预览效果
+    </text>
+</svg>`,
+                language: 'xml',
+                theme: 'vs-dark',
+                automaticLayout: true,
+                minimap: { enabled: true },
+                lineNumbers: 'on',
+                folding: true,
+                fontSize: 14,
+                fontFamily: "'Fira Code', 'Consolas', monospace",
+                roundedSelection: true,
+                scrollBeyondLastLine: false,
+                renderLineHighlight: 'all',
+                formatOnPaste: true,
+                formatOnType: true,
+            });
+
+            // 监听编辑器内容变化
+            editor.onDidChangeModelContent(debounce(updatePreview, 300));
+            updatePreview();
+        });
+
+        // 防抖函数
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        // 更新预览
+        function updatePreview() {
+            const svgCode = editor.getValue();
+            const startTime = performance.now();
+            
+            try {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(svgCode, 'image/svg+xml');
+                if (doc.querySelector('parsererror')) {
+                    throw new Error('SVG解析错误');
+                }
+
+                const preview = document.getElementById('svg-preview');
+                preview.innerHTML = svgCode;
+                document.getElementById('error-message').style.display = 'none';
+
+                // 获取SVG元素并设置最小尺寸
+                const svgElement = preview.querySelector('svg');
+                if (svgElement) {
+                    const width = svgElement.width.baseVal.value || svgElement.viewBox.baseVal.width || 200;
+                    const height = svgElement.height.baseVal.value || svgElement.viewBox.baseVal.height || 200;
+                    preview.style.width = Math.max(width, preview.clientWidth) + 'px';
+                    preview.style.height = Math.max(height, preview.clientHeight) + 'px';
+                }
+
+                const endTime = performance.now();
+                const renderTime = endTime - startTime;
+                
+                if (renderTime > 100) {
+                    document.getElementById('performance-info').textContent = `渲染时间: ${renderTime.toFixed(2)}ms`;
+                    document.getElementById('performance-info').style.display = 'block';
+                } else {
+                    document.getElementById('performance-info').style.display = 'none';
+                }
+            } catch (error) {
+                document.getElementById('error-message').textContent = `错误: ${error.message}`;
+                document.getElementById('error-message').style.display = 'block';
+            }
+        }
+
+        // 格式化代码
+        function formatCode() {
+            const formatted = prettier.format(editor.getValue(), {
+                parser: 'html',
+                plugins: prettierPlugins
+            });
+            editor.setValue(formatted);
+        }
+
+        // 缩放控制
+        function zoomIn() {
+            scale *= 1.2;
+            updateTransform();
+        }
+
+        function zoomOut() {
+            scale *= 0.8;
+            updateTransform();
+        }
+
+        function resetZoom() {
+            scale = 1;
+            translateX = 0;
+            translateY = 0;
+            updateTransform();
+        }
+
+        function updateTransform() {
+            const preview = document.getElementById('svg-preview');
+            preview.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        }
+
+        // 拖动支持
+        const preview = document.getElementById('svg-preview');
+        const scrollContainer = document.querySelector('.preview-scroll-container');
+        
+        preview.addEventListener('mousedown', startDragging);
+        document.addEventListener('mousemove', drag);
+        document.addEventListener('mouseup', stopDragging);
+
+        function startDragging(e) {
+            if (e.ctrlKey || e.metaKey) {
+                isDragging = true;
+                startX = e.clientX - translateX;
+                startY = e.clientY - translateY;
+                e.preventDefault();
+            }
+        }
+
+        function drag(e) {
+            if (!isDragging) return;
+            translateX = e.clientX - startX;
+            translateY = e.clientY - startY;
+            updateTransform();
+            e.preventDefault();
+        }
+
+        function stopDragging() {
+            isDragging = false;
+        }
+
+        // 全屏控制
+        function toggleFullscreen() {
+            const preview = document.querySelector('.preview-container');
+            if (!document.fullscreenElement) {
+                preview.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // 导出功能
+        function exportToImage(format) {
+            const svgElement = document.querySelector('#svg-preview svg');
+            if (!svgElement) {
+                alert('没有找到有效的SVG内容');
+                return;
+            }
+
+            // 获取SVG的尺寸
+            const svgWidth = svgElement.width.baseVal.value || svgElement.viewBox.baseVal.width || 200;
+            const svgHeight = svgElement.height.baseVal.value || svgElement.viewBox.baseVal.height || 200;
+
+            // 创建一个新的SVG字符串，确保包含尺寸
+            const svgData = new XMLSerializer().serializeToString(svgElement);
+            const svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+            const url = URL.createObjectURL(svgBlob);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = svgWidth;
+            canvas.height = svgHeight;
+            
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            
+            img.onload = function() {
+                ctx.fillStyle = 'white';  // 设置白色背景
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+                
+                try {
+                    const filename = document.getElementById('filename').value || 'svg-export';
+                    const link = document.createElement('a');
+                    link.download = `${filename}.${format.toLowerCase()}`;
+                    link.href = canvas.toDataURL(`image/${format.toLowerCase()}`, 1.0);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } catch (e) {
+                    alert('导出失败：' + e.message);
+                }
+                URL.revokeObjectURL(url);
+            };
+            
+            img.onerror = function() {
+                alert('图片加载失败，请检查SVG内容是否正确');
+                URL.revokeObjectURL(url);
+            };
+            
+            img.src = url;
+        }
+
+        // 保存SVG文件
+        function saveSVG() {
+            const svgCode = editor.getValue();
+            try {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(svgCode, 'image/svg+xml');
+                if (doc.querySelector('parsererror')) {
+                    throw new Error('SVG格式错误');
+                }
+
+                const blob = new Blob([svgCode], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                const filename = document.getElementById('filename').value || 'svg-export';
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `${filename}.svg`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                alert('保存SVG失败：' + error.message);
+            }
+        }
+
+        function exportPNG() {
+            exportToImage('PNG');
+        }
+
+        function exportJPEG() {
+            exportToImage('JPEG');
+        }
+
+        // 初始化拖动分隔条
+        const resizer = document.querySelector('.resizer');
+        const editorContainer = document.querySelector('#editor-container');
+        
+        resizer.addEventListener('mousedown', initResize, false);
+
+        function initResize(e) {
+            isResizing = true;
+            currentX = e.clientX;
+            initialEditorWidth = editorContainer.getBoundingClientRect().width;
+            
+            document.addEventListener('mousemove', resize, false);
+            document.addEventListener('mouseup', stopResize, false);
+        }
+
+        function resize(e) {
+            if (!isResizing) return;
+            
+            const deltaX = e.clientX - currentX;
+            const newWidth = initialEditorWidth + deltaX;
+            
+            if (newWidth > 200 && newWidth < window.innerWidth - 400) {
+                editorContainer.style.width = `${newWidth}px`;
+                editorContainer.style.flex = 'none';
+            }
+        }
+
+        function stopResize() {
+            isResizing = false;
+            document.removeEventListener('mousemove', resize, false);
+            document.removeEventListener('mouseup', stopResize, false);
+            editor.layout(); // 重新布局编辑器
+        }
+
+        // 滚轮缩放
+        scrollContainer.addEventListener('wheel', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const delta = e.deltaY || e.detail || e.wheelDelta;
+                if (delta < 0) {
+                    scale *= 1.1;
+                } else {
+                    scale *= 0.9;
+                }
+                updateTransform();
+            }
+        }, { passive: false });
+
+        // 清空编辑器
+        function clearEditor() {
+            if (confirm('确定要清空编辑器内容吗？')) {
+                editor.setValue('');
+                updatePreview();
+            }
+        }
+
+        // 修改全屏图标状态
+        document.addEventListener('fullscreenchange', function() {
+            const fullscreenBtn = document.querySelector('[onclick="toggleFullscreen()"] i');
+            if (document.fullscreenElement) {
+                fullscreenBtn.className = 'fas fa-compress';
+            } else {
+                fullscreenBtn.className = 'fas fa-expand';
+            }
+        });
+
+        // 复制SVG代码
+        async function copySVG() {
+            const svgCode = editor.getValue();
+            try {
+                await navigator.clipboard.writeText(svgCode);
+                const copyBtn = document.querySelector('[onclick="copySVG()"]');
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="fas fa-check"></i>已复制！';
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                }, 2000);
+            } catch (err) {
+                alert('复制失败：' + err.message);
+            }
+        }
+
+        // 添加文件名输入框提示
+        const filenameInput = document.getElementById('filename');
+        const filenameTooltip = document.getElementById('filename-tooltip');
+        
+        filenameInput.addEventListener('mouseenter', () => {
+            const rect = filenameInput.getBoundingClientRect();
+            filenameTooltip.style.top = `${rect.bottom + 5}px`;
+            filenameTooltip.style.left = `${rect.left}px`;
+            filenameTooltip.classList.add('show');
+        });
+        
+        filenameInput.addEventListener('mouseleave', () => {
+            filenameTooltip.classList.remove('show');
+        });
+
+        // 自动隐藏操作提示
+        const controlsHint = document.querySelector('.controls-hint');
+        let hintTimeout;
+
+        function showControlsHint() {
+            controlsHint.style.opacity = '0.8';
+            clearTimeout(hintTimeout);
+            hintTimeout = setTimeout(() => {
+                controlsHint.style.opacity = '0';
+            }, 5000); // 5秒后自动隐藏
+        }
+
+        // 页面加载时显示提示
+        showControlsHint();
+
+        // 当用户进行相关操作时再次显示提示
+        scrollContainer.addEventListener('wheel', () => {
+            if (e.ctrlKey || e.metaKey) {
+                showControlsHint();
+            }
+        });
+
+        preview.addEventListener('mousedown', () => {
+            if (e.ctrlKey || e.metaKey) {
+                showControlsHint();
+            }
+        });
+    </script>
+    <script src="https://unpkg.com/prettier@2.8.8/standalone.js"></script>
+    <script src="https://unpkg.com/prettier@2.8.8/parser-html.js"></script>
+</body>
+</html>
