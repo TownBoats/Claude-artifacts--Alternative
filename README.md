@@ -1,4 +1,4 @@
-# HTML/SVG 实时预览工具
+# HTML/SVG 实时预览工具-Claude artifacts部分平替
 
 本项目包含两个独立的HTML文件，提供实时预览功能：
 
